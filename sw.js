@@ -1,6 +1,6 @@
 // Exam Study Hub — offline-first service worker
 // Unique cache name per app to avoid colliding with other apps on this origin.
-var CACHE_NAME = 'exam-study-hub-v1';
+var CACHE_NAME = 'exam-study-hub-v2';
 var CACHE_PREFIX = 'exam-study-hub-';
 
 var PRECACHE_URLS = [

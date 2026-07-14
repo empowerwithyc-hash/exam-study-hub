@@ -342,10 +342,11 @@ var STUDY_DATA = {"langs": {"en": {"exams": {"pceia": {"key": "pceia", "name": "
   var DATA = STUDY_DATA; // { langs: { en:{exams,quizzes,mocks,scheduleHtml}, zh:{...}, ms:{...} }, ui:{...} }
   var LANG_LABELS = { en:'EN', zh:'中文', ms:'BM' };
   var LANG_ORDER = ['en','zh','ms'];
-  var ESH_BUILD = 'v1.0.0';
+  var ESH_BUILD = 'v1.1.0';
   var STORAGE_PREFIX = 'esh_';
   var KEY_PROGRESS = STORAGE_PREFIX+'progress';
   var KEY_LANG = STORAGE_PREFIX+'lang';
+  var KEY_NAME = STORAGE_PREFIX+'name';
   var MOCK_READY_THRESHOLD = 70;
 
   function freshProgress(){
@@ -354,6 +355,7 @@ var STUDY_DATA = {"langs": {"en": {"exams": {"pceia": {"key": "pceia", "name": "
 
   var state = {
     lang:'en',
+    name:'',
     progress:{ pceia: freshProgress(), ceilli: freshProgress() },
     route:{ view:'home' },
     stack:[],
@@ -392,11 +394,16 @@ var STUDY_DATA = {"langs": {"en": {"exams": {"pceia": {"key": "pceia", "name": "
         mergeProgress(state.progress, parsed);
       }
     }catch(e){ /* keep in-memory default */ }
+    try{
+      var nameRaw = safeLocalGet(KEY_NAME);
+      if (nameRaw) state.name = nameRaw;
+    }catch(e){ /* keep in-memory default (blank name) */ }
   }
   function persistState(){
     try{
       safeLocalSet(KEY_PROGRESS, JSON.stringify(state.progress));
       safeLocalSet(KEY_LANG, state.lang);
+      safeLocalSet(KEY_NAME, state.name || '');
     }catch(e){ /* storage unavailable — app continues in-memory */ }
   }
 
@@ -610,64 +617,107 @@ var STUDY_DATA = {"langs": {"en": {"exams": {"pceia": {"key": "pceia", "name": "
     document.getElementById('mCloseBtn2').addEventListener('click', hideModal);
   }
 
-  // ---------------- share results (plain text summary, no urls/accounts/uploads) ----------------
-  var SHARE_STRINGS = {
-    en: {
-      title: 'Exam Study Hub — My Progress',
-      examName: { pceia:'PCEIA', ceilli:'CEILLI' },
-      chaptersAttempted: function(n,total){ return 'Chapters attempted: '+n+'/'+total; },
-      avgQuiz: function(pct){ return 'Average chapter-quiz score: '+pct+'%'; },
-      noQuiz: 'Average chapter-quiz score: no quizzes taken yet',
-      mockLine: function(score,total,pct,passed){ return 'Mock exam score: '+score+'/'+total+' ('+pct+'%) — '+(passed?'PASS':'BELOW THRESHOLD')+' (threshold '+MOCK_READY_THRESHOLD+'%)'; },
-      noMock: 'Mock exam score: not attempted yet',
-      readyYes: 'Overall: Ready to book — both mock exams scored '+MOCK_READY_THRESHOLD+'% or higher.',
-      readyNo: 'Overall: Not yet ready to book — aim for '+MOCK_READY_THRESHOLD+'%+ on both mock exams.'
-    },
-    zh: {
-      title: '考试学习中心 — 我的进度',
-      examName: { pceia:'PCEIA', ceilli:'CEILLI' },
-      chaptersAttempted: function(n,total){ return '已学习章节：'+n+'/'+total; },
-      avgQuiz: function(pct){ return '章节测验平均分：'+pct+'%'; },
-      noQuiz: '章节测验平均分：尚未测验',
-      mockLine: function(score,total,pct,passed){ return '模拟考试成绩：'+score+'/'+total+'（'+pct+'%）— '+(passed?'通过':'未达标')+'（标准 '+MOCK_READY_THRESHOLD+'%）'; },
-      noMock: '模拟考试成绩：尚未参加',
-      readyYes: '总评：已准备好报考——两场模拟考试均达 '+MOCK_READY_THRESHOLD+'% 以上。',
-      readyNo: '总评：尚未准备好报考——请争取两场模拟考试均达 '+MOCK_READY_THRESHOLD+'% 以上。'
-    },
-    ms: {
-      title: 'Hab Belajar Peperiksaan — Kemajuan Saya',
-      examName: { pceia:'PCEIA', ceilli:'CEILLI' },
-      chaptersAttempted: function(n,total){ return 'Bab dicuba: '+n+'/'+total; },
-      avgQuiz: function(pct){ return 'Purata skor kuiz bab: '+pct+'%'; },
-      noQuiz: 'Purata skor kuiz bab: belum ada kuiz diambil',
-      mockLine: function(score,total,pct,passed){ return 'Skor peperiksaan mock: '+score+'/'+total+' ('+pct+'%) — '+(passed?'LULUS':'BELUM MENCAPAI')+' (sasaran '+MOCK_READY_THRESHOLD+'%)'; },
-      noMock: 'Skor peperiksaan mock: belum dicuba',
-      readyYes: 'Keseluruhan: Sedia untuk menempah — kedua-dua mock mencapai '+MOCK_READY_THRESHOLD+'% atau lebih.',
-      readyNo: 'Keseluruhan: Belum sedia untuk menempah — sasarkan '+MOCK_READY_THRESHOLD+'%+ pada kedua-dua mock.'
-    }
+  // ---------------- recruit name (esh_name, localStorage, try/catch guarded) ----------------
+  function openNameModal(onSaved){
+    var current = state.name || '';
+    showModal(
+      '<h3>Your name 你的名字 / Nama anda</h3>' +
+      '<input type="text" id="mNameInput" value="'+escapeHtml(current)+'" ' +
+        'placeholder="Your name 你的名字 / Nama anda" autocomplete="name" ' +
+        'style="width:100%;min-height:44px;font-size:16px;padding:10px 12px;box-sizing:border-box;'+
+        'border:1px solid var(--border);border-radius:8px;" />' +
+      '<div class="modal-msg" id="mNameMsg"></div>' +
+      '<div class="modal-actions">' +
+        '<button class="btn btn-gold" id="mNameSave" style="min-height:44px;">Save 保存 / Simpan</button>' +
+        '<button class="btn" id="mNameCancel" style="min-height:44px;">Cancel 取消 / Batal</button>' +
+      '</div>'
+    );
+    document.getElementById('mNameSave').addEventListener('click', function(){
+      var val = document.getElementById('mNameInput').value.trim();
+      if (!val){
+        document.getElementById('mNameMsg').textContent = 'Please enter your name 请输入姓名 / Sila masukkan nama anda';
+        return;
+      }
+      state.name = val;
+      safeLocalSet(KEY_NAME, val);
+      hideModal();
+      render();
+      if (typeof onSaved === 'function') onSaved();
+    });
+    document.getElementById('mNameCancel').addEventListener('click', hideModal);
+    setTimeout(function(){
+      var el = document.getElementById('mNameInput');
+      if (el) el.focus();
+    }, 30);
+  }
+
+  // ---------------- share results (structured, machine-parseable summary) ----------------
+  // Intro sentence is localized; the report block's keys stay in English always,
+  // so a recruiter/leader can parse it regardless of the recruit's UI language.
+  var SHARE_INTRO = {
+    en: "Here's my Exam Study Hub progress:",
+    zh: '这是我的考试学习中心进度：',
+    ms: 'Ini kemajuan Hab Belajar Peperiksaan saya:'
   };
 
-  function buildShareSummary(){
-    var S = SHARE_STRINGS[state.lang] || SHARE_STRINGS.en;
-    var lines = [S.title, ''];
-    var bothReady = true;
-    ['pceia','ceilli'].forEach(function(examKey){
-      var stats = examStats(examKey);
-      lines.push(S.examName[examKey]+':');
-      lines.push('  '+S.chaptersAttempted(stats.readCount, stats.total));
-      lines.push('  '+(stats.avgQuiz===null ? S.noQuiz : S.avgQuiz(stats.avgQuiz)));
-      if (stats.mockBest){
-        var passedThreshold = stats.mockBest.pct >= MOCK_READY_THRESHOLD;
-        if (!passedThreshold) bothReady = false;
-        lines.push('  '+S.mockLine(stats.mockBest.score, stats.mockBest.total, stats.mockBest.pct, passedThreshold));
-      } else {
-        bothReady = false;
-        lines.push('  '+S.noMock);
-      }
-      lines.push('');
+  // Chapters counted for the "core route" of an exam: any partGroup that is NOT
+  // optional. For PCEIA that is Part A (1-6) + Part C (11-16) = 12; Part B
+  // (7-10, general-insurance route) is excluded. For CEILLI the single "core"
+  // partGroup covers all 9 chapters.
+  function coreChapterNums(examKey){
+    var ex = examOf(examKey);
+    var nums = [];
+    (ex.partGroups || []).forEach(function(pg){
+      if (pg.optional) return;
+      for (var n = pg.range[0]; n <= pg.range[1]; n++) nums.push(n);
     });
-    lines.push(bothReady ? S.readyYes : S.readyNo);
+    return nums;
+  }
+
+  function coreStats(examKey){
+    var nums = coreChapterNums(examKey);
+    var p = state.progress[examKey];
+    var readCount = 0, scores = [];
+    nums.forEach(function(n){
+      if (p.read[n]) readCount++;
+      if (p.quizBest[n] !== undefined) scores.push(p.quizBest[n]);
+    });
+    var avg = scores.length ? Math.round(scores.reduce(function(a,b){return a+b;},0)/scores.length) : null;
+    return { total: nums.length, readCount: readCount, avgQuiz: avg, mockBest: p.mockBest };
+  }
+
+  function localDateStr(){
+    var d = new Date();
+    return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
+  }
+
+  function buildStructuredShareBlock(){
+    var pceia = coreStats('pceia');
+    var ceilli = coreStats('ceilli');
+    var pceiaMockPct = pceia.mockBest ? pceia.mockBest.pct : null;
+    var ceilliMockPct = ceilli.mockBest ? ceilli.mockBest.pct : null;
+    var pceiaReady = pceiaMockPct !== null && pceiaMockPct >= MOCK_READY_THRESHOLD;
+    var ceilliReady = ceilliMockPct !== null && ceilliMockPct >= MOCK_READY_THRESHOLD;
+    var lines = [
+      '📊 EXAM STUDY HUB REPORT',
+      'Name: '+(state.name || ''),
+      'Date: '+localDateStr(),
+      'PCEIA-Chapters: '+pceia.readCount+'/'+pceia.total+' (A+C route)',
+      'PCEIA-QuizAvg: '+(pceia.avgQuiz===null ? 0 : pceia.avgQuiz)+'%',
+      'PCEIA-Mock: '+(pceiaMockPct===null ? '—' : pceiaMockPct+'%'),
+      'CEILLI-Chapters: '+ceilli.readCount+'/'+ceilli.total,
+      'CEILLI-QuizAvg: '+(ceilli.avgQuiz===null ? 0 : ceilli.avgQuiz)+'%',
+      'CEILLI-Mock: '+(ceilliMockPct===null ? '—' : ceilliMockPct+'%'),
+      'ReadyToBook-PCEIA: '+(pceiaReady ? 'YES' : 'NO')+' (mock ≥70)',
+      'ReadyToBook-CEILLI: '+(ceilliReady ? 'YES' : 'NO'),
+      'App: '+ESH_BUILD
+    ];
     return lines.join('\n');
+  }
+
+  function buildShareSummary(){
+    var intro = SHARE_INTRO[state.lang] || SHARE_INTRO.en;
+    return intro + '\n\n' + buildStructuredShareBlock();
   }
 
   function showToast(msg){
@@ -701,6 +751,10 @@ var STUDY_DATA = {"langs": {"en": {"exams": {"pceia": {"key": "pceia", "name": "
   }
 
   function shareResults(){
+    if (!state.name){
+      openNameModal(function(){ shareResults(); });
+      return;
+    }
     var text = buildShareSummary();
     if (navigator.share){
       try{
@@ -736,6 +790,8 @@ var STUDY_DATA = {"langs": {"en": {"exams": {"pceia": {"key": "pceia", "name": "
           '<button class="btn btn-ghost btn-sm" id="btnExport">'+t('exportProgress')+'</button>' +
           '<button class="btn btn-ghost btn-sm" id="btnImport">'+t('importProgress')+'</button>' +
           '<button class="btn btn-ghost btn-sm" id="btnScheduleTop">'+t('studySchedule')+'</button>' +
+          '<button class="btn btn-ghost btn-sm" id="btnNameEdit" title="Edit name 编辑姓名 / Edit nama">'+
+            (state.name ? escapeHtml(state.name) : '👤')+' ✎</button>' +
           '<button class="btn btn-gold btn-sm btn-share" id="btnShare" title="Share my results 分享成绩 / Kongsi keputusan">Share my results 分享成绩 / Kongsi keputusan</button>' +
         '</div>' +
       '</div>' +
@@ -749,6 +805,7 @@ var STUDY_DATA = {"langs": {"en": {"exams": {"pceia": {"key": "pceia", "name": "
     document.getElementById('btnExport').addEventListener('click', openExportModal);
     document.getElementById('btnImport').addEventListener('click', openImportModal);
     document.getElementById('btnScheduleTop').addEventListener('click', function(){ go({view:'schedule'}); });
+    document.getElementById('btnNameEdit').addEventListener('click', function(){ openNameModal(); });
     document.getElementById('btnShare').addEventListener('click', shareResults);
     document.querySelectorAll('#langSwitch [data-lang]').forEach(function(btn){
       btn.addEventListener('click', function(){ setLang(btn.getAttribute('data-lang')); });
